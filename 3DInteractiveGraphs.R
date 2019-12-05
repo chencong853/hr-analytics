@@ -1,0 +1,5 @@
+library(rgl)
+library(nlme)
+library(mgcv)
+mydf <- read.csv("https://stats.idre.ucla.edu/stat/data/hsb2.csv")
+scatter3d(socst~read+write, data=mydf, fit="quadratic", residuals=TRUE,   bg="white", axis.scales=TRUE, grid=TRUE, ellipsoid=FALSE)

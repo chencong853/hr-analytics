@@ -1,0 +1,449 @@
+---
+title: "Human Resources Analytics"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## About This Kernel
+
+This Kernel was written by Cong Chen in R and used as personal data analytics project.
+
+## Business Problem
+
+Bob's multi-million dollar company is about to go bankrupt and he wants to know why his employees are leaving.
+
+## Client
+
+Bob the Boss
+
+## Objective
+
+The company wants to understand what factors contributed most to employee turnover and to create a model that can predict if a certain employee will leave the company or not. The goal is to create or improve diﬀerent retention strategies on targeted employees. Overall, the implementation of this model will allow management to create better decision-making actions.
+
+
+## OSEMN Pipeline
+1. Obtain the data
+2. Scrubbing/Cleaning the data
+3. Exploring/Virtualizing the data
+4. Modeling the data
+5. Interpreting the data
+
+
+## Reference
+
+
+
+## Part 1: Obtain the Data
+
+```{r}
+# Read the analytics csv file and store the original dataset into a datafrme call "orignial_data"
+setwd("~/Desktop/Human_Resource_Analytics_Kaggle_Dataset_Master")
+original_df <- read.csv("HR_comma_sep.csv", header = TRUE)
+```
+
+## Part 2: Scrubbing/Clean the Data
+
+Always always exame the dataset to make sure that no missing value or any unsual Max value exists.
+
+```{r}
+# Check to see if there are any missing values in the dataset and check overall summary
+any(is.null(original_df))
+any(is.na(original_df))
+```
+
+```{r}
+# Have a overview of the dataset
+head(original_df, 5)
+```
+
+```{r}
+# Rename columns for better readbility
+library(plyr)
+df <- rename(original_df, c("satisfaction_level" = "Satisfaction",
+                   "last_evaluation" = "Evaluation",
+                   "number_project" = "ProjectCount",
+                   "average_montly_hours" = "AverageMonthlyHours",
+                   "time_spend_company" = "YearsAtCompany",
+                   "Work_accident" = "WorkAccident",
+                   "left" = "Turnover",
+                   "promotion_last_5years" = "Promotion",
+                   "sales" = "Department",
+                   "salary" = "SalaryLevel"
+                   ))
+```
+
+```{r}
+# Move the response variable "Turnover" to the fromt of the table
+Turnover <- df[, 7]
+df[, 7] <- NULL
+df <- data.frame(Turnover, df)
+head(df, 5)
+```
+
+```{r}
+# Write out cleaned_data as HR_cleaned_data.csv
+write.csv(df, file = "HR_cleaned_data.csv", row.names = FALSE)
+```
+
+## Part 3: Exploring the Data
+
+### 3a. Statistical Overview
+
+The dataset has:
+
+* Nearly 15,000 employee observations and 10 features
+* The company has a turnover rate of 0.24
+* Mean satisfaction of employees is 0.61
+* Mean satisfaction of employees who did not turnover is higher than that of employees who did turnover, which are 0.67 and 0.44 
+* Mean promotion of employees who did not turnover is higher than that of employees who did turnover as well, which are 0.026 and 0.005 
+
+```{r}
+# The dataset contains 10 columns and 14999 observations
+dim(df)
+```
+
+```{r}
+# check the type of the features
+str(df)
+```
+
+```{r}
+# About 76% of employees did not turnover and 24% employees did turnover
+# NOTE: When performing cross validation, its important to maintain this turnover ratio??
+turnover_count <- data.frame(count(df, "Turnover"))
+turnover_rate <- data.frame("Turnover" = turnover_count[,1], "TurnoverRate" = turnover_count[, 2] / length(df$Turnover))
+turnover_rate
+```
+
+```{r}
+# Display overall summary of the employees
+summary(df)
+```
+
+```{r}
+# Overview of summary (Turnover V.S. Non-turnover)
+turnover_summary <- round(aggregate(df[, c(-1, -9, -10)], by = list(df$Turnover), FUN = mean), 3)
+names(turnover_summary)[1] <- "ValueOfTurnover"
+```
+
+```{r}
+turnover_summary
+```
+
+### 3b.1 Correlation Matrix & Heatmap
+
+**Moderate Positively Correlated Features:**
+
+* ProjectCount vs. Evaluation = 0.349
+* AverageMonthlyHours vs. Evaluation = 0.340
+* AverageMonthlyHours vs. ProjectCount = 0.417
+
+**Moderate Negatively Correlated Features:**
+
+* Satisfaction vs. Turnover = -0.388
+
+**Summary:**
+As we can see from the heat map, for **positve(+)** side, ProjectCount, Evaluation and AverageMonthlyHours have a positive correlation, which means the employees who did more projects and spent more time on work were evaluated highly.
+
+For **negative(-)** side, Satisfaction has a neagtive relation with Turnover, which means employees who had low satisfaction were more likely to left the company. 
+
+
+```{r}
+# Correlation Matrix
+cor_matrix <- round(cor(df[, c(-9,-10)]), 3)
+cor_matrix
+
+library("GGally")
+ggcorr(df[, c(-9,-10)], geom = "tile", nbreaks = 8, hjust = 0.53, size = 3.5)
+```
+
+### 3b.2 Statistical Test for Correlation
+
+#### One-Sample T-Test (Measuring Satisfaction Level)
+
+The Satisfaction has the higest correlation with the dependent variable Turnover, thus I will make a one- sample t-test to see whether the average satisfaction level of employees that did turnover differs from those that did not turnover.
+
+**Hypthesis Testing:** Is there any significant difference in the means of satisfaction level between employees who did turnover and the employees who did not turnover?
+
+- **Null Hypothesis:** (H0: pTS = pES) The null hyphothesis would be that **no** difference in satisfaction level between employees who did turnover and those who did not.
+- **Alternative Hyphothesis:** (HA: pTS != pES) The alterantive hyphothesis would be that there is a difference in satisfaction level between employees who did turnover and those who did not.
+
+```{r}
+stayed_emp <- subset(df, Turnover == 0)
+left_emp <- subset(df, Turnover == 1)
+
+stayed_emp_satisfaction <- round(mean(stayed_emp$Satisfaction), 3)
+left_emp_satisfaction <- round(mean(left_emp$Satisfaction), 3)
+population_satisfaction <- round(mean(df$Satisfaction), 3)
+
+print(paste("The mean satisfaction for the employee with no turnover is:", stayed_emp_satisfaction))
+print(paste("The mean satisfaction for the employee that did turnover is:", left_emp_satisfaction))
+print(paste("The mean satisfaction for the all employee is:", population_satisfaction))
+```
+
+#### Conducting the T-Test
+
+```{r}
+t.test(left_emp$Satisfaction, mu = stayed_emp_satisfaction)
+```
+
+### T-Test Result
+
+The test result shows that **the test statistic "t" is equal to -51.373**.This test statistic tells us how much the sample mean deviates from the null hypothesis. If the t-statistic lies outside the quantiles of the t-distribution corresponding to our confidence level and degrees of freedom, we reject the null hypothesis.
+
+### T-Test Quantile
+
+```{r}
+# Degree of freedom
+dof <- sum(as.numeric(left_emp$Turnover))
+
+lq <- qt(0.025, dof)  # left quantile
+rq <- qt(0.975, dof) # right quantile
+
+print(paste("The t-distribution left quartile range is: ", lq))
+print(paste("The t-distribution right quartile range is: ", rq))
+```
+ 
+### One-Sample T-Test Summary
+
+T-Test = -51.37 | P-Value = 2.2e-16 | Reject Null Hypothesis
+
+### 3c. Distribution Plots (Satisfaction - Evaluation - AverageMonthlyHours)
+
+**Summary: ** 
+
+* Satisfaction: There is a huge spike for employees in both low and high satisfaction.
+* Evaluation: There is a bimodal of employee evaluation for low evaluations (less than 0.6) and high evalutions (higher than 0.8).
+* AverageMonthlyHours: There is a bimodal of employee average monthly hours for low and high hours ( less than 150 hours & higher than 250 hours).
+* The distribution of Evaluation and AverageMonthlyHours are very similiar.
+* Employees with higher AverageMonthlyHours have higher evaluation
+
+### ???? difference between ggplot historgram and hist()? how to choose propriate breaks?
+```{r}
+# Import Packages
+library(ggplot2)
+library(grid)
+library(gridExtra)
+
+# Plot Satisfaction, Evaluation, 
+for (i in c("Satisfaction", "Evaluation", "AverageMonthlyHours")) {
+  sub_df <- df[, i]
+  breaks <- pretty(range(sub_df),
+        n = nclass.FD(sub_df),
+        min.n = 1)
+  bwidth <- breaks[2]-breaks[1]
+  assign(paste("p_", i, sep = ""), 
+         ggplot(df) + aes_string(i) + 
+           geom_histogram(binwidth = bwidth, fill="sky blue", color = "white") + 
+           ggtitle(paste(i, "\nDistribution")) + 
+           ylab("Count") +
+           theme(plot.title = element_text(size = 10, face = "bold")))
+}
+
+grid.arrange(p_Satisfaction, p_Evaluation, p_AverageMonthlyHours, nrow = 1)
+```
+
+### 3d. Salary v.s. Turnover
+
+**Summary:** 
+
+* Majority employees who did turnover have a low and medium salary level.
+* Only few of employees with high salary level did turnover.
+* Employees with lower salary are more likely to leave.
+
+```{r}
+# Summary Table
+#countST <- table(df$Turnover, df$SalaryLevel)
+#countST
+# Distribution Barplot
+#barplot(countST, main = "Employee Salary Turnover Distribution",
+        #xlab = "Salary Level", col = c("#D6604D", "#4393C3"),
+        #legend = rownames(countST), 
+        #args.legend = list("title" = "Turnover"), 
+        #beside = TRUE) 
+
+# Use ggplot2
+ggplot(df, aes(x = SalaryLevel, fill = factor(Turnover))) + geom_bar(position = "dodge") + scale_fill_manual(values = c("#D6604D", "#4393C3")) 
+```
+
+### 3e. Department v.s. Turnover
+
+**Summary**:
+
+* Technical, support and sales are the top3 department have employees turnover.
+* Management has the fewest employees turnover.
+* The more employees in a department, the more employees in this department left. In other words, the number of employees turnover in a department is positively related to the number of employees in that department.
+
+```{r}
+library(RColorBrewer)
+#countD <- table(df$Department)
+# Distribution Barplot
+#barplot(countD, main = "Employee Department Distribution", 
+        #col = brewer.pal(10, "RdBu"),
+        # ylab = "Department",
+        #las = 1, cex.names = 0.6, cex.axis = 0.6,
+        #horiz = TRUE) 
+
+# Use ggplot2
+ggplot(df, aes(x = Department, fill = Department)) + geom_bar() + coord_flip() + scale_fill_brewer(palette = "RdBu")
+```
+
+```{r}
+#countDT <- table(df$Turnover, df$Department)
+# Distribution Barplot 
+#barplot(countDT, main = "Employee Department Turnover Distribution",
+        #col = c("#D6604D", "#4393C3"),
+        # ylab = "Department",
+        #las = 1, cex.names = 0.6, cex.axis = 0.6,
+        #legend = rownames(countDT), 
+        #args.legend = list("title" = "Turnover", cex = 0.6), 
+        #beside = TRUE, horiz = TRUE)
+
+# Use ggplot2
+ggplot(df, aes(x = Department, fill = factor(Turnover))) + geom_bar(position = "dodge") + scale_fill_manual(values = c("#D6604D", "#4393C3")) + coord_flip()
+```
+
+### 3f. ProjectCount v.s. Turnover
+
+**Summary:**
+
+* All employees with 7 projects left the company.
+* Employees who have low project count and high project count (less than 3 or higher than 5) has very high turnover rate.
+* Employees with 3 and 4 projects are the majority of employees but have really low turnover rate. 
+* Majority of employees who did not leave has 3, 4, 5 projects.
+
+```{r}
+#countPT <- table(df$Turnover, df$ProjectCount)
+# Distribution Barplot
+#barplot(countPT, main = "Employee Project Number Count Distribution",
+        #col = c("#D6604D", "#4393C3"),
+        #xlab = "Project Count",
+        #las = 1, cex.names = 1, cex.axis = 1,
+        #legend = rownames(countPT), 
+        #args.legend = list("title" = "Turnover", cex = 1), 
+        #beside = TRUE)
+
+# Use ggplot2
+ggplot(df, aes(x = factor(ProjectCount), fill = factor(Turnover))) + geom_bar(position = "dodge") + scale_fill_manual(values = c("#D6604D", "#4393C3"))
+```
+
+### 3g. Satisfaction v.s. Turnover
+
+**Summary:**
+
+* There is a trimodal distribution of Evaluation for employees who did turnover.
+* Employees with really low satisfaction (less than 0.25), low satisfaction (between 0.25 and 0.5) and really high satisfaction (higher than 0.75) tend to leave.
+* Majority of employees who did not turnover has a satisfaction over 0.5.
+
+```{r}
+# Recall that we have stayed_emp and left_emp dataset
+# Kernel Density Estimate Plot
+library(ggplot2)
+ggplot() + geom_density(aes(x = Satisfaction), colour = "#D6604D", data = stayed_emp) +
+  geom_density(aes(x = Satisfaction), colour = "#4393C3", data = left_emp) 
+```
+
+
+### 3h. Evaluation v.s. Turnover
+
+**Summary:**
+
+* There is a biomodal distribution of Evaluation for employees who did turnover
+* Employees with low (less than 0.6) and high (higher than 0.8) evaluation are more likely to leave.
+* Employees with a evaluation between 0.6 and 0.8 are more likely to stay.
+* Majority of employees who did not turnover has a evaluation over 0.5.
+
+```{r}
+# Kernel Density Estimate Plot
+library(ggplot2)
+ggplot() + geom_density(aes(x = Evaluation), colour = "#D6604D", data = stayed_emp) +
+  geom_density(aes(x = Evaluation), colour = "#4393C3", data = left_emp) 
+```
+
+### 3i. AverageMonthlyHours v.s. Turnover
+
+**Summary:**
+
+* There is a biomodal distribution of AverageMonthlyHours for employees who did turnover.
+* Employees with low (less than 150) and high (higher than 250) average monthly hours are more likely to leave.
+* Employees with a average monthly hours between 150 and 250 are more likely to stay.
+* Employees who did turnover generally were underworked or overworked.
+
+```{r}
+# Kernel Density Estimate Plot
+library(ggplot2)
+ggplot() + geom_density(aes(x = AverageMonthlyHours), 
+                        colour = "#D6604D", data = stayed_emp) +
+  geom_density(aes(x = AverageMonthlyHours), 
+               colour = "#4393C3", data = left_emp) 
+```
+
+### 3j. AverageMonthlyHours v.s. ProjectCount
+
+**Summary:**
+
+* As project count increased, the average monthly hours increased.
+* Except employees with 2 projects, the employees who did turnover spent more time on work than employees who did not turnover with the same project number.
+* Employees who did not turnover had a relatively constant average monthly hours even in the different number of projects.
+* Employees who did turnover had an increasing average monthly hours as project count increased.
+
+
+```{r}
+# Boxplot AverageMonthlyHours v.s. ProjectCount
+library(ggplot2)
+ggplot(df, aes(x = factor(ProjectCount), y = AverageMonthlyHours, fill = factor(Turnover))) + geom_boxplot() + scale_fill_manual(values = c("#D6604D", "#4393C3"))
+```
+
+### 3k. Evaluation v.s. ProjectCount
+
+**Summary:**
+
+* The pattern of this boxplot is very similar to the one with AverageMonthlyHours.
+* As project count increased, the evalution increased.
+* Except employees with 2 projects, the employees who did turnover had higher evaluation than employees who did not turnover with the same project number.
+* Employees who did not turnover had a relatively constant evaluation even in the different number of projects.
+* Employees who did turnover had an increasing evaluation as project count increased.
+
+? Does it means that employees with 2 projects left the company because they are lack of productivity, whereas those with 3 or more employees left the company because of the stress or better opportunity from other companies?
+
+```{r}
+# Boxplot Evaluation v.s. ProjectCount
+library(ggplot2)
+ggplot(df, aes(x = factor(ProjectCount), y = Evaluation, fill = factor(Turnover))) + geom_boxplot() + scale_fill_manual(values = c("#D6604D", "#4393C3"))
+```
+
+### 3l. Satisfaction v.s. Evaluation
+
+**Summary:** There are 3 distinct clusters for employees who did turnover.
+
+**Cluster 1 (High Evaluation Low Satisfaction)** This group of employees had high evaluation (higher than 0.75) but had low satisfaction (lower than 0.15), which indicates that employees left the company were good employees but not satisfied with the current work situation.
+
+**Cluster 2 (High Evaluation High Satisfaction)** This group of employees had high evaluation (higher than 0.8) and high satisfaction (higher than 0.7). These employees were the ideal employees because they had good performance and loved their work.
+
+**Cluster 3 (Low Evaluation Low Satisfaction)** This group of employees had low evaluation (lower than 0.5) and low satisfaction (lower than 0.6). These employees had poor performance and felt bad about their work.
+
+```{r}
+library(ggplot2)
+ggplot(df, aes(x = Satisfaction, y = Evaluation, color = factor(Turnover))) + 
+  geom_point(size = 3) + scale_color_manual(values = c("#D6604D", "#4393C3"))
+```
+
+### 3m. Turnover v.s. YearsAtCompany
+
+**Summary:**
+- For employees who just entered the company, only few of them left the company.
+- For those who have worked in the company for more than 7 years, none of them left the company.
+- Employees who did a turnover are mostly distributed on employees who have worked for 3 - 5 years.
+- For employees who have worked for 5 years, the number of people left is more than that of people stay. 
+
+```{r}
+ggplot(df, aes(x = YearsAtCompany, fill = factor(Turnover))) + geom_bar(aes(y = (..count..)/sum(..count..)), position = "dodge") + scale_fill_manual(values = c("#D6604D", "#4393C3"))
+```
+
+### 3n. K-Means Clustering of Employee Turnover
+
+
+
